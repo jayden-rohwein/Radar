@@ -1,0 +1,193 @@
+' {$STAMP BS2}
+' {$PBASIC 2.5}
+'------------------------------------[ Radar ]------------------------------------------------------------------------------
+'dispay radar style object distance measurements in the Debug Terminal.
+'as the boe-bot sweeps the ping from 0 to 180 degrees
+
+'------------------------------------[ i/o definitions ]------------------------------------------------------------------------------
+
+Ping      PIN 15 'Ping sensor uses radar to detect objects ( pulsout 5 ; pulsin 1,var )
+PingServo PIN 14 'servo to rotate Ping Sensor (pulsout 250 - 1250 )
+
+'------------------------------------[ Constants ]------------------------------------------------------------------------------
+
+rightLim      CON 250   ' right and left limits of radar
+leftLim       CON 1250
+sweepInc      CON 10    ' increment the radar will move
+
+left          CON 0     'sweeps to the left
+right         CON 1    'sweeps to the right
+
+CmConstant    CON 2260  'used to convert time to distance
+dirToAngle    CON 8434  'used to convert ping direction to angle(brads)
+
+'------------------------------------[ Variables ]------------------------------------------------------------------------------
+
+counter   VAR Word
+temp      VAR Word
+
+time      VAR Word   ' time for radar to recieve echo
+dist      VAR Time   ' distance calculated from time
+
+
+pingDir   VAR Word   ' direction sensor in facing
+sweepDir  VAR Bit
+angle     VAR Byte   ' angle(brads) of sensor
+
+x         VAR Word   ' x coodinates
+y         VAR Word   ' y coodinates
+xSign     VAR Word   'if x is pos or negz
+
+'------------------------------------[ Initialization ]------------------------------------------------------------------------------
+
+'lights led
+PULSOUT 0,2000
+
+'sets ping sensor to starting location
+pingDir = rightLim
+sweepDir = left
+FOR counter = 1 TO 40
+    PULSOUT PingServo,pingDir
+    PAUSE 20
+NEXT
+
+'represents boe bot on terminal
+DEBUG CLS, CRSRXY ,64,31,"B"
+
+'------------------------------------[ Main Routine ]------------------------------------------------------------------------------
+
+DO
+    'get the distance of object infront of it
+    GOSUB getDistance
+
+    'rotates the sensor to next angle
+    GOSUB rotatePing
+
+    'gets cos and sin from pingDir
+    GOSUB toCOS_SIN
+
+    'max distance of 128cm scales to ( 0 to 256 )
+    dist = dist MAX 128 */ 512
+
+
+    'multiplies by R (distance)
+    x = ABS(x) */ dist
+    y = y */ dist
+
+    IF xSign = 1 THEN x = -x
+
+    'adjust coodinates for debug terminal
+    GOSUB debugRadar
+
+LOOP
+
+'------------------------------------[ Subroutine - rotatePing  ]------------------------------------------------------------------------------
+'rotates the ping sensor to the next position
+
+rotatePing:
+
+  'if sensor is at the far left
+  IF( pingDir >= leftLim) THEN
+      sweepDir = right
+
+      DEBUG CLS,CRSRXY ,64,31,"B"
+      temp = pingDir
+      FOR counter = 250 TO 1250 STEP 10
+        pingDir = counter
+        GOSUB toCos_Sin
+        GOSUB debugRadar
+        NEXT
+      pingDir = temp
+      temp = 0
+
+  ELSEIF( pingDir <= rightLim) THEN
+      sweepDir = left
+      DEBUG CLS,CRSRXY ,64,31,"B"
+      temp = pingDir
+      FOR counter = 250 TO 1250 STEP 10
+        pingDir = counter
+        GOSUB toCos_Sin
+        GOSUB debugRadar
+        NEXT
+      pingDir = temp
+      temp = 0
+  ENDIF
+
+  'increments sweepDir
+  IF(sweepDir = left) THEN
+  pingDir = pingDir + sweepInc
+
+  ELSE
+  pingDir = pingDir - sweepInc
+  ENDIF
+
+
+        PULSOUT pingServo,pingDir
+        PAUSE 20
+
+
+  RETURN
+
+'------------------------------------[ Subroutine - getDistance ]------------------------------------------------------------------------------
+'uses ping sensor to get distance to object ahead of sensor
+
+getDistance:
+
+  'gets reading from sensor
+  PULSOUT Ping,5
+  PULSIN ping,1,time
+
+  'converts to centimeters
+  dist = time ** CmConstant
+
+RETURN
+
+'------------------------------------[ Subroutine - toCardesian ]------------------------------------------------------------------------------
+' converts polar coodinates to cardesian so it can be dispayed on the screen
+' x = r cos angle
+' y = r sin angle
+
+toCOS_SIN:
+
+  'converts to brads
+  angle = pingDir - rightLim ** dirToAngle
+
+  'cos of angle (-127 to 127)
+  x = COS(angle)
+  xSign = x.BIT15
+
+  'sin of angle (0 to 127)
+  y = SIN(angle)
+
+  'converts to (0 to 32)
+  x = ABS(x) MAX 127 */ 65
+  y = ABS(y) MAX 127 */ 66
+
+
+  'for negative values of x
+  IF xSign = 1 THEN x = -x
+
+
+RETURN
+
+
+
+'------------------------------------[ Subroutine - debugRadar ]------------------------------------------------------------------------------
+'adjust x and y to the terminal
+'debugs what the boebot "sees" with the ping sensor to the debug terminal
+
+debugRadar:
+
+
+'adjust coodinated for screen
+'*2 because 2 spaces = 1 cr
+x = 2 * ( x + 32 ) MAX 127
+y = 32 - y
+
+IF temp = 0 THEN
+' only dispays dots when it sees something
+IF dist < 256 THEN DEBUG CRSRXY, x,y,"X"
+ELSE
+   DEBUG CRSRXY, x,y,"*"
+ENDIF
+RETURN
